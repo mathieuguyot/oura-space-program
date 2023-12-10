@@ -35,7 +35,7 @@ const cannonDebugger = CannonDebugger(scene, world);
 // Create earth and spacecraft
 const earthRadius = 6371000;
 const earthMass = 5.972e24;
-const earth = new Planet(scene, world, "Earth", "16k_mars.png", earthMass, earthRadius);
+const earth = new Planet(scene, world, "Earth", "16k_earth.jpeg", earthMass, earthRadius);
 const sc = new SpaceCraft(
     scene,
     world,

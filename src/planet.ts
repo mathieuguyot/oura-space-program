@@ -1,60 +1,25 @@
 import * as THREE from "three";
-import * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js";
 import * as CANNON from "cannon-es";
 import IEntity from "./iEntity";
-import { OBJExporter } from "three/examples/jsm/Addons.js";
 
-function getPolyhedronShape(mesh: THREE.Mesh) {
-    /* let geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", mesh.geometry.getAttribute("position"));
-
-    geometry = BufferGeometryUtils.mergeVertices(geometry);
-
-    const points = [];
-    const faces = [];
-
-    if (geometry.index) {
-        const position = geometry.attributes.position.array;
-        const index = geometry.getIndex();
-
-        for (let i = 0; i < position.length; i += 3) {
-            points.push(new CANNON.Vec3(position[i], position[i + 1], position[i + 2]));
-        }
-        for (let i = 0; i < index.length; i += 3) {
-            faces.push([index[i], index[i + 1], index[i + 2]]);
+function bodiesAreInContact(bodyA: CANNON.Body, bodyB: CANNON.Body, world: CANNON.World) {
+    for (var i = 0; i < world.contacts.length; i++) {
+        var c = world.contacts[i];
+        if ((c.bi === bodyA && c.bj === bodyB) || (c.bi === bodyB && c.bj === bodyA)) {
+            return true;
         }
     }
- */
-    //const { vertices, faces } = getVerticesAndFaces(mesh);
-    //return new CANNON.ConvexPolyhedron({ vertices: vertices, faces: faces });
-}
-
-function getVerticesAndFaces(object: THREE.Object3D) {
-    const exporter = new OBJExporter();
-    const contents = exporter.parse(object);
-
-    const rows = contents
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => line.split(" "));
-    const vertices = rows
-        .filter((row) => row[0] === "v")
-        .map((row) => row.slice(1).map(parseFloat));
-    const faces = rows
-        .filter((row) => row[0] === "f")
-        .map((row) => row.slice(1))
-        .map((row) => row.map((cell) => parseInt(cell.split("/")[0], 10) - 1));
-
-    return {
-        vertices,
-        faces
-    };
+    return false;
 }
 
 export default class Planet implements IEntity {
     name: string;
     massKg: number;
     radiusM: number;
+    physicalWorld: CANNON.World;
+    markerMesh: THREE.Mesh;
+    pivot: THREE.Group;
+    oldPosition: THREE.Vector3;
 
     planetMesh: THREE.Mesh;
     physicalBody: CANNON.Body;
@@ -72,21 +37,35 @@ export default class Planet implements IEntity {
         this.name = name;
         this.massKg = massKg;
         this.radiusM = radiusM;
+        this.physicalWorld = physicalWorld;
 
         // Create planet mesh
+
+        const marker = new THREE.BoxGeometry(1, 1, 1);
+        const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        this.markerMesh = new THREE.Mesh(marker, markerMaterial);
+        this.markerMesh.position.set(radiusM, 0, 0);
+        this.oldPosition = this.markerMesh.position.clone();
+
         const debugTexture = new THREE.TextureLoader().load("grid.jpg");
+
         debugTexture.repeat = new THREE.Vector2(1000, 1000);
         debugTexture.wrapS = debugTexture.wrapT = THREE.RepeatWrapping;
         const texture = new THREE.TextureLoader().load(texturePath);
         this.planetMesh = new THREE.Mesh(
             new THREE.SphereGeometry(radiusM, 360, 360),
-            new THREE.MeshBasicMaterial({ map: debugTexture })
+            new THREE.MeshBasicMaterial({ map: texture })
         );
-        scene.add(this.planetMesh);
+        this.pivot = new THREE.Group();
+        this.pivot.add(this.planetMesh);
+        this.pivot.add(this.markerMesh);
+        scene.add(this.pivot);
 
         // Create pysical body
-        const colliderShape = new CANNON.Box(new CANNON.Vec3(100, 100, 0.01));
-        this.physicalBody = new CANNON.Body({ mass: massKg });
+
+        let colliderShape = new CANNON.Box(new CANNON.Vec3(100, 100, 1));
+        this.physicalBody = new CANNON.Body({ mass: massKg, linearDamping: 0 });
+        this.physicalBody.shapeOffsets = [new CANNON.Vec3(0, 0, -1)];
         this.physicalBody.addShape(colliderShape);
         physicalWorld.addBody(this.physicalBody);
         physicalWorld.addEventListener("preStep", () => {
@@ -102,9 +81,11 @@ export default class Planet implements IEntity {
                 force.y = (normalizedForcedir.y * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
                 force.z = (normalizedForcedir.z * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
                 otherBody.applyForce(force.negate(), new CANNON.Vec3(0, 0, 0));
-                //console.log("sc velocity", otherBody.velocity);
             }
         });
+    }
+    setIsGrounded(isGrounded: boolean, deltaPosition: THREE.Vector3): void {
+        throw new Error("Method not implemented.");
     }
 
     getMesh(): THREE.Mesh {
@@ -120,8 +101,31 @@ export default class Planet implements IEntity {
     }
 
     step(deltaTime: number) {
+        const markerWorldPos = this.markerMesh.getWorldPosition(new THREE.Vector3());
+        const deltaPos = new THREE.Vector3(
+            markerWorldPos.x - this.oldPosition.x,
+            markerWorldPos.y - this.oldPosition.y,
+            markerWorldPos.z - this.oldPosition.z
+        );
+        this.oldPosition = markerWorldPos;
+        this.pivot.rotation.y += 0.00004667 * 10 * deltaTime;
+        this.physicalBody.quaternion.set(
+            this.planetMesh.quaternion.x,
+            this.planetMesh.quaternion.y,
+            this.planetMesh.quaternion.z,
+            this.planetMesh.quaternion.w
+        );
         for (const entity of this.entities) {
             entity.step(deltaTime);
+
+            entity.setIsGrounded(
+                bodiesAreInContact(
+                    this.getPhysicsBody(),
+                    entity.getPhysicsBody(),
+                    this.physicalWorld
+                ),
+                deltaPos
+            );
 
             if (this.entities.length > 0) {
                 // Move collider plane

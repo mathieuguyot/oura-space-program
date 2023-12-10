@@ -12,6 +12,7 @@ export default class SpaceCraft implements IEntity {
     scMesh: THREE.Mesh;
     physicalBody: CANNON.Body;
     orbit: Orbit;
+    isGrounded: boolean;
 
     constructor(
         scene: THREE.Scene,
@@ -21,8 +22,9 @@ export default class SpaceCraft implements IEntity {
         defaultVel: THREE.Vector3
     ) {
         this.inputManager = inputManager;
+        this.isGrounded = false;
 
-        // Create phyiscal bodyq
+        // Create phyiscal body
         this.physicalBody = new CANNON.Body({
             mass: 10,
             position: new CANNON.Vec3(defaultPos.x, defaultPos.y, defaultPos.z),
@@ -56,6 +58,21 @@ export default class SpaceCraft implements IEntity {
         oe.fromCartesian(this.physicalBody.position, this.physicalBody.velocity);
         this.orbit = new Orbit(scene, "red", oe);
     }
+    setIsGrounded(isGrounded: boolean, deltaPosition: THREE.Vector3): void {
+        this.isGrounded = isGrounded;
+        if (isGrounded) {
+            this.physicalBody.position = new CANNON.Vec3(
+                this.physicalBody.position.x + deltaPosition.x,
+                this.physicalBody.position.y + deltaPosition.y,
+                this.physicalBody.position.z + deltaPosition.z
+            );
+            this.scMesh.position.set(
+                this.physicalBody.position.x,
+                this.physicalBody.position.y,
+                this.physicalBody.position.z
+            );
+        }
+    }
     getMesh(): THREE.Mesh {
         return this.scMesh;
     }
@@ -67,6 +84,11 @@ export default class SpaceCraft implements IEntity {
         const force = 200;
         const rotationalForce = 200;
 
+        if (this.isGrounded) {
+            this.physicalBody.linearDamping = 0.4;
+        } else {
+            this.physicalBody.linearDamping = 0;
+        }
         if (this.inputManager.IsKeyPressed("a") || this.inputManager.IsKeyPressed("A")) {
             var torque = new CANNON.Vec3(rotationalForce * deltaTime, 0, 0);
             this.physicalBody.applyTorque(torque);
@@ -116,10 +138,5 @@ export default class SpaceCraft implements IEntity {
         const oe = new OrbitalElements(0, 0, 0, 0, 0, 0);
         oe.fromCartesian(this.physicalBody.position, this.physicalBody.velocity);
         this.orbit.setOrbitalElements(oe);
-
-        console.log(
-            "altitude",
-            this.physicalBody.position.distanceTo(new CANNON.Vec3(0, 0, 0)) - 6371000
-        );
     }
 }

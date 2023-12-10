@@ -75,9 +75,5 @@ export default class OrbitalElements {
         this.ascendingNode = THREE.MathUtils.radToDeg(this.ascendingNode);
         this.inclination = THREE.MathUtils.radToDeg(this.inclination);
         this.trueAnomaly = THREE.MathUtils.radToDeg(this.trueAnomaly);
-
-        //console.log("apoapsis", this.semiMajorAxis * 1 + this.eccentricity - 6371000 / 2);
-        console.log("e: ", this.eccentricity);
-        //console.log("periapsis", this.semiMajorAxis * 1 - this.eccentricity - 6371000 / 2);
     }
 }
