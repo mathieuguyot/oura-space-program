@@ -22,7 +22,7 @@ export default class SpaceCraft implements IEntity {
         defaultVel: THREE.Vector3
     ) {
         this.inputManager = inputManager;
-        this.isGrounded = false;
+        this.isGrounded = true;
 
         // Create phyiscal body
         this.physicalBody = new CANNON.Body({
@@ -60,18 +60,16 @@ export default class SpaceCraft implements IEntity {
     }
     setIsGrounded(isGrounded: boolean, deltaPosition: THREE.Vector3): void {
         this.isGrounded = isGrounded;
-        if (isGrounded) {
-            this.physicalBody.position = new CANNON.Vec3(
-                this.physicalBody.position.x + deltaPosition.x,
-                this.physicalBody.position.y + deltaPosition.y,
-                this.physicalBody.position.z + deltaPosition.z
-            );
-            this.scMesh.position.set(
-                this.physicalBody.position.x,
-                this.physicalBody.position.y,
-                this.physicalBody.position.z
-            );
-        }
+        this.physicalBody.position = new CANNON.Vec3(
+            this.physicalBody.position.x + deltaPosition.x,
+            this.physicalBody.position.y + deltaPosition.y,
+            this.physicalBody.position.z + deltaPosition.z
+        );
+        this.scMesh.position.set(
+            this.physicalBody.position.x,
+            this.physicalBody.position.y,
+            this.physicalBody.position.z
+        );
     }
     getMesh(): THREE.Mesh {
         return this.scMesh;

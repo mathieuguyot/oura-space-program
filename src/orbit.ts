@@ -57,7 +57,7 @@ export default class Orbit {
                 new THREE.LineBasicMaterial({ color: this.color, side: THREE.DoubleSide })
             );
             this.orbit.frustumCulled = false;
-            //this.scene.add(this.orbit);
+            this.scene.add(this.orbit);
         }
     }
 

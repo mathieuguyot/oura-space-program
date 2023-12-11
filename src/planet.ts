@@ -20,6 +20,7 @@ export default class Planet implements IEntity {
     markerMesh: THREE.Mesh;
     pivot: THREE.Group;
     oldPosition: THREE.Vector3;
+    deltaTime: number;
 
     planetMesh: THREE.Mesh;
     physicalBody: CANNON.Body;
@@ -38,6 +39,7 @@ export default class Planet implements IEntity {
         this.massKg = massKg;
         this.radiusM = radiusM;
         this.physicalWorld = physicalWorld;
+        this.deltaTime = 0;
 
         // Create planet mesh
 
@@ -81,6 +83,31 @@ export default class Planet implements IEntity {
                 force.y = (normalizedForcedir.y * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
                 force.z = (normalizedForcedir.z * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
                 otherBody.applyForce(force.negate(), new CANNON.Vec3(0, 0, 0));
+
+                this.pivot.rotation.y += 0.00004667 * 10 * this.deltaTime;
+                this.physicalBody.quaternion.set(
+                    this.planetMesh.quaternion.x,
+                    this.planetMesh.quaternion.y,
+                    this.planetMesh.quaternion.z,
+                    this.planetMesh.quaternion.w
+                );
+
+                const markerWorldPos = this.markerMesh.getWorldPosition(new THREE.Vector3());
+                const deltaPos = new THREE.Vector3(
+                    markerWorldPos.x - this.oldPosition.x,
+                    markerWorldPos.y - this.oldPosition.y,
+                    markerWorldPos.z - this.oldPosition.z
+                );
+                this.oldPosition = markerWorldPos;
+
+                entity.setIsGrounded(
+                    bodiesAreInContact(
+                        this.getPhysicsBody(),
+                        entity.getPhysicsBody(),
+                        this.physicalWorld
+                    ),
+                    deltaPos
+                );
             }
         });
     }
@@ -101,31 +128,9 @@ export default class Planet implements IEntity {
     }
 
     step(deltaTime: number) {
-        const markerWorldPos = this.markerMesh.getWorldPosition(new THREE.Vector3());
-        const deltaPos = new THREE.Vector3(
-            markerWorldPos.x - this.oldPosition.x,
-            markerWorldPos.y - this.oldPosition.y,
-            markerWorldPos.z - this.oldPosition.z
-        );
-        this.oldPosition = markerWorldPos;
-        this.pivot.rotation.y += 0.00004667 * 10 * deltaTime;
-        this.physicalBody.quaternion.set(
-            this.planetMesh.quaternion.x,
-            this.planetMesh.quaternion.y,
-            this.planetMesh.quaternion.z,
-            this.planetMesh.quaternion.w
-        );
+        this.deltaTime = deltaTime;
         for (const entity of this.entities) {
             entity.step(deltaTime);
-
-            entity.setIsGrounded(
-                bodiesAreInContact(
-                    this.getPhysicsBody(),
-                    entity.getPhysicsBody(),
-                    this.physicalWorld
-                ),
-                deltaPos
-            );
 
             if (this.entities.length > 0) {
                 // Move collider plane
