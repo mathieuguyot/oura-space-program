@@ -69,20 +69,24 @@ export default class Planet implements IEntity {
         this.physicalBody = new CANNON.Body({ mass: massKg, linearDamping: 0 });
         this.physicalBody.shapeOffsets = [new CANNON.Vec3(0, 0, -1)];
         this.physicalBody.addShape(colliderShape);
+        this.physicalBody.type = CANNON.Body.STATIC;
         physicalWorld.addBody(this.physicalBody);
         physicalWorld.addEventListener("preStep", () => {
             for (const entity of this.entities) {
                 const center = new CANNON.Vec3(0, 0, 0);
-                const otherBody = entity.getPhysicsBody();
-
-                const sqrDst = otherBody.position.vsub(center).lengthSquared();
-                let normalizedForcedir = otherBody.position.vsub(center);
-                normalizedForcedir = normalizedForcedir.scale(1 / normalizedForcedir.length());
-                const force = new CANNON.Vec3(0, 0, 0);
-                force.x = (normalizedForcedir.x * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
-                force.y = (normalizedForcedir.y * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
-                force.z = (normalizedForcedir.z * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
-                otherBody.applyForce(force.negate(), new CANNON.Vec3(0, 0, 0));
+                for (const otherBody of entity.getColliders()) {
+                    const sqrDst = otherBody.position.vsub(center).lengthSquared();
+                    let normalizedForcedir = otherBody.position.vsub(center);
+                    normalizedForcedir = normalizedForcedir.scale(1 / normalizedForcedir.length());
+                    const force = new CANNON.Vec3(0, 0, 0);
+                    force.x =
+                        (normalizedForcedir.x * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
+                    force.y =
+                        (normalizedForcedir.y * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
+                    force.z =
+                        (normalizedForcedir.z * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
+                    otherBody.applyForce(force.negate(), new CANNON.Vec3(0, 0, 0));
+                }
 
                 this.pivot.rotation.y += 0.00004667 * 10 * this.deltaTime;
                 this.physicalBody.quaternion.set(
@@ -102,8 +106,8 @@ export default class Planet implements IEntity {
 
                 entity.setIsGrounded(
                     bodiesAreInContact(
-                        this.getPhysicsBody(),
-                        entity.getPhysicsBody(),
+                        this.physicalBody,
+                        entity.getColliders()[0],
                         this.physicalWorld
                     ),
                     deltaPos
@@ -115,16 +119,16 @@ export default class Planet implements IEntity {
         throw new Error("Method not implemented.");
     }
 
-    getMesh(): THREE.Mesh {
-        return this.planetMesh;
+    getMeshes(): THREE.Mesh[] {
+        throw new Error("Method not implemented.");
     }
 
     addEntity(entity: IEntity) {
         this.entities.push(entity);
     }
 
-    getPhysicsBody(): CANNON.Body {
-        return this.physicalBody;
+    getColliders(): CANNON.Body[] {
+        throw new Error("Method not implemented.");
     }
 
     step(deltaTime: number) {
@@ -134,13 +138,14 @@ export default class Planet implements IEntity {
 
             if (this.entities.length > 0) {
                 // Move collider plane
-                const length = this.entities[0].getPhysicsBody().position.length();
+                const index = this.entities[0].getColliders().length - 1;
+                const length = this.entities[0].getColliders()[index].position.length();
                 this.physicalBody.position.x =
-                    (this.entities[0].getPhysicsBody().position.x / length) * this.radiusM;
+                    (this.entities[0].getColliders()[index].position.x / length) * this.radiusM;
                 this.physicalBody.position.y =
-                    (this.entities[0].getPhysicsBody().position.y / length) * this.radiusM;
+                    (this.entities[0].getColliders()[index].position.y / length) * this.radiusM;
                 this.physicalBody.position.z =
-                    (this.entities[0].getPhysicsBody().position.z / length) * this.radiusM;
+                    (this.entities[0].getColliders()[index].position.z / length) * this.radiusM;
 
                 // Rotate collider plane (TODO compute this shit clean)
                 const boxM = new THREE.Mesh(new THREE.BoxGeometry(100, 100, 0.1));
@@ -153,9 +158,9 @@ export default class Planet implements IEntity {
                 );
                 boxM.lookAt(
                     new THREE.Vector3(
-                        this.entities[0].getPhysicsBody().position.x,
-                        this.entities[0].getPhysicsBody().position.y,
-                        this.entities[0].getPhysicsBody().position.z
+                        this.entities[0].getColliders()[index].position.x,
+                        this.entities[0].getColliders()[index].position.y,
+                        this.entities[0].getColliders()[index].position.z
                     )
                 );
                 this.physicalBody.quaternion.copy(
