@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
 import IEntity from "./iEntity";
+import { threeJsToCannonQuat } from "./utils";
 
 function bodiesAreInContact(bodyA: CANNON.Body, bodyB: CANNON.Body, world: CANNON.World) {
     for (var i = 0; i < world.contacts.length; i++) {
@@ -56,7 +57,7 @@ export default class Planet implements IEntity {
         const texture = new THREE.TextureLoader().load(texturePath);
         this.planetMesh = new THREE.Mesh(
             new THREE.SphereGeometry(radiusM, 360, 360),
-            new THREE.MeshBasicMaterial({ map: texture })
+            new THREE.MeshBasicMaterial({ map: debugTexture })
         );
         this.pivot = new THREE.Group();
         this.pivot.add(this.planetMesh);
@@ -64,7 +65,6 @@ export default class Planet implements IEntity {
         scene.add(this.pivot);
 
         // Create pysical body
-
         let colliderShape = new CANNON.Box(new CANNON.Vec3(100, 100, 1));
         this.physicalBody = new CANNON.Body({ mass: massKg, linearDamping: 0 });
         this.physicalBody.shapeOffsets = [new CANNON.Vec3(0, 0, -1)];
@@ -75,26 +75,23 @@ export default class Planet implements IEntity {
             for (const entity of this.entities) {
                 const center = new CANNON.Vec3(0, 0, 0);
                 for (const otherBody of entity.getColliders()) {
-                    const sqrDst = otherBody.position.vsub(center).lengthSquared();
                     let normalizedForcedir = otherBody.position.vsub(center);
                     normalizedForcedir = normalizedForcedir.scale(1 / normalizedForcedir.length());
-                    const force = new CANNON.Vec3(0, 0, 0);
-                    force.x =
+                    const sqrDst = otherBody.position.vsub(center).lengthSquared();
+                    const forceX =
                         (normalizedForcedir.x * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
-                    force.y =
+                    const forceY =
                         (normalizedForcedir.y * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
-                    force.z =
+                    const forceZ =
                         (normalizedForcedir.z * 6.6743e-11 * massKg * otherBody.mass) / sqrDst;
-                    otherBody.applyForce(force.negate(), new CANNON.Vec3(0, 0, 0));
+                    otherBody.applyForce(
+                        new CANNON.Vec3(-forceX, -forceY, -forceZ),
+                        new CANNON.Vec3(0, 0, 0)
+                    );
                 }
 
                 this.pivot.rotation.y += 0.00004667 * 10 * this.deltaTime;
-                this.physicalBody.quaternion.set(
-                    this.planetMesh.quaternion.x,
-                    this.planetMesh.quaternion.y,
-                    this.planetMesh.quaternion.z,
-                    this.planetMesh.quaternion.w
-                );
+                this.physicalBody.quaternion.copy(threeJsToCannonQuat(this.planetMesh.quaternion));
 
                 const markerWorldPos = this.markerMesh.getWorldPosition(new THREE.Vector3());
                 const deltaPos = new THREE.Vector3(

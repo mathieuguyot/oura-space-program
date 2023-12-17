@@ -4,20 +4,23 @@ import InputManager from "./inputManager";
 import IEntity from "./iEntity";
 import Orbit from "./orbit";
 import OrbitalElements from "./orbitalElements";
+import { useAltitude } from "./store";
+import { cannonToThreeJsQuat, cannonToThreeJsVec3, threeJsToCannonVec3 } from "./utils";
 
 export default class SpaceCraft implements IEntity {
     inputManager: InputManager;
     rotationSpeed: number = 1.0;
     motorIsOn: boolean = false;
-    //scMesh: THREE.Mesh;
-    //physicalBody: CANNON.Body;
     orbit: Orbit;
     isGrounded: boolean;
     flightPhase = 0;
+    altitude = 0;
 
     colliders: CANNON.Body[] = [];
     meshes: THREE.Mesh[] = [];
     lockConstraints: CANNON.LockConstraint[] = [];
+
+    thrustVector: THREE.ArrowHelper;
 
     constructor(
         scene: THREE.Scene,
@@ -29,22 +32,8 @@ export default class SpaceCraft implements IEntity {
         this.inputManager = inputManager;
         this.isGrounded = false;
         // Create phyiscal body
-        /* this.physicalBody = new CANNON.Body({
-            mass: 10,
-            position: new CANNON.Vec3(defaultPos.x, defaultPos.y, defaultPos.z),
-            velocity: new CANNON.Vec3(defaultVel.x, defaultVel.y, defaultVel.z),
-            linearDamping: 0,
-            angularDamping: 0.4
-        });
-        this.physicalBody.addShape(new CANNON.Box(new CANNON.Vec3(0.5, 0.8, 0.5)));
-        this.physicalBody.shapeOffsets[0] = new CANNON.Vec3(0, -0.3, 0);
-        this.physicalBody.quaternion.setFromAxisAngle(
-            new CANNON.Vec3(0, 0, -1),
-            THREE.MathUtils.degToRad(90)
-        );
-        physicalWorld.addBody(this.physicalBody); */
 
-        const segments = 20;
+        const segments = 36;
         const boosterRadius = 1.85;
         const firstStageBoosterHeight = 39;
         const secondStageBoosterHeight = 4;
@@ -63,7 +52,7 @@ export default class SpaceCraft implements IEntity {
             engineHeight,
             segments
         );
-        const firstStageEngineColliderBody = new CANNON.Body({ mass: 10 });
+        const firstStageEngineColliderBody = new CANNON.Body({ mass: 1250 });
         firstStageEngineColliderBody.addShape(firstStageEngineCollider);
         firstStageEngineColliderBody.position.x = defaultPos.x;
         firstStageEngineColliderBody.position.y = defaultPos.y;
@@ -77,7 +66,7 @@ export default class SpaceCraft implements IEntity {
             firstStageBoosterHeight,
             segments
         );
-        const firstStageBoosterColliderBody = new CANNON.Body({ mass: 10 });
+        const firstStageBoosterColliderBody = new CANNON.Body({ mass: 5000 });
         firstStageBoosterColliderBody.addShape(firstStageBoosterCollider);
         firstStageBoosterColliderBody.position.y = firstStageEngineColliderBody.position.y;
         firstStageBoosterColliderBody.position.x =
@@ -97,7 +86,7 @@ export default class SpaceCraft implements IEntity {
             decouplerHeight,
             segments
         );
-        const decouplerColliderBody = new CANNON.Body({ mass: 10 });
+        const decouplerColliderBody = new CANNON.Body({ mass: 200 });
         decouplerColliderBody.addShape(decouplerCollider);
         decouplerColliderBody.position.y = firstStageBoosterColliderBody.position.y;
         decouplerColliderBody.position.x =
@@ -118,7 +107,7 @@ export default class SpaceCraft implements IEntity {
             engineHeight,
             segments
         );
-        const secondStageEngineColliderBody = new CANNON.Body({ mass: 10 });
+        const secondStageEngineColliderBody = new CANNON.Body({ mass: 1250 });
         secondStageEngineColliderBody.addShape(secondStageEngienCollider);
         secondStageEngineColliderBody.position.y = decouplerColliderBody.position.y;
         secondStageEngineColliderBody.position.x =
@@ -138,7 +127,7 @@ export default class SpaceCraft implements IEntity {
             secondStageBoosterHeight,
             segments
         );
-        const secondStageBoosterColliderBody = new CANNON.Body({ mass: 10 });
+        const secondStageBoosterColliderBody = new CANNON.Body({ mass: 550 });
         secondStageBoosterColliderBody.addShape(secondStageBoosterCollider);
         secondStageBoosterColliderBody.position.y = secondStageEngineColliderBody.position.y;
         secondStageBoosterColliderBody.position.x =
@@ -163,7 +152,7 @@ export default class SpaceCraft implements IEntity {
             decouplerHeight,
             segments
         );
-        const secondStageDecouplerColliderBody = new CANNON.Body({ mass: 10 });
+        const secondStageDecouplerColliderBody = new CANNON.Body({ mass: 200 });
         secondStageDecouplerColliderBody.addShape(secondStageDecouplerCollider);
         secondStageDecouplerColliderBody.position.y = secondStageBoosterColliderBody.position.y;
         secondStageDecouplerColliderBody.position.x =
@@ -192,7 +181,7 @@ export default class SpaceCraft implements IEntity {
             capsuleHeight,
             segments
         );
-        const capsuleColliderBody = new CANNON.Body({ mass: 10 });
+        const capsuleColliderBody = new CANNON.Body({ mass: 840 });
         capsuleColliderBody.quaternion.setFromEuler(0, 0, THREE.MathUtils.degToRad(-90));
         capsuleColliderBody.addShape(capsuleCollider);
         capsuleColliderBody.position.y = secondStageDecouplerColliderBody.position.y;
@@ -270,7 +259,7 @@ export default class SpaceCraft implements IEntity {
             capsuleTopRadius,
             boosterRadius,
             capsuleHeight,
-            20
+            segments
         );
         const capsuleMesh = new THREE.Mesh(capsuleGeometry, whiteMaterial);
         this.meshes.push(capsuleMesh);
@@ -278,29 +267,22 @@ export default class SpaceCraft implements IEntity {
         for (const mesh of this.meshes) {
             scene.add(mesh);
         }
-        this.matchMeshPositionToPhysicalPosition();
+        this.updateAllPhysicalBodies(this.isGrounded ? 0.4 : 0, new THREE.Vector3());
 
         // Create orbit
         const oe = new OrbitalElements(0, 0, 0, 0, 0, 0);
         oe.fromCartesian(
-            this.colliders[this.colliders.length - 1].position,
-            this.colliders[this.colliders.length - 1].velocity
+            this.colliders[this.colliders.length - 1].position.clone(),
+            this.colliders[this.colliders.length - 1].velocity.clone()
         );
         this.orbit = new Orbit(scene, "red", oe);
+
+        this.thrustVector = new THREE.ArrowHelper();
+        scene.add(this.thrustVector);
     }
     setIsGrounded(isGrounded: boolean, deltaPosition: THREE.Vector3): void {
         this.isGrounded = isGrounded;
         this.updateAllPhysicalBodies(isGrounded ? 0.4 : 0, deltaPosition);
-        /* this.physicalBody.position = new CANNON.Vec3(
-            this.physicalBody.position.x + deltaPosition.x,
-            this.physicalBody.position.y + deltaPosition.y,
-            this.physicalBody.position.z + deltaPosition.z
-        );
-        this.scMesh.position.set(
-            this.physicalBody.position.x,
-            this.physicalBody.position.y,
-            this.physicalBody.position.z
-        ); */
     }
     getMeshes(): THREE.Mesh[] {
         return this.meshes;
@@ -311,49 +293,49 @@ export default class SpaceCraft implements IEntity {
 
     matchMeshPositionToPhysicalPosition() {
         for (let i = 0; i < this.colliders.length; i++) {
-            this.meshes[i].position.set(
-                this.colliders[i].position.x,
-                this.colliders[i].position.y,
-                this.colliders[i].position.z
-            );
-            this.meshes[i].quaternion.set(
-                this.colliders[i].quaternion.x,
-                this.colliders[i].quaternion.y,
-                this.colliders[i].quaternion.z,
-                this.colliders[i].quaternion.w
-            );
+            this.meshes[i].position.copy(cannonToThreeJsVec3(this.colliders[i].position));
+            this.meshes[i].quaternion.copy(cannonToThreeJsQuat(this.colliders[i].quaternion));
         }
     }
 
     updateAllPhysicalBodies(linearDamping: number, deltaPosition: THREE.Vector3) {
         for (let i = 0; i < this.colliders.length; i++) {
+            console.log(this.colliders[i].velocity);
             this.colliders[i].linearDamping = linearDamping;
-            this.colliders[i].position.x += deltaPosition.x;
-            this.colliders[i].position.y += deltaPosition.y;
-            this.colliders[i].position.z += deltaPosition.z;
+            this.colliders[i].angularDamping = 0.5;
+            if (this.altitude < 80000) {
+                this.colliders[i].position.x += deltaPosition.x;
+                this.colliders[i].position.y += deltaPosition.y;
+                this.colliders[i].position.z += deltaPosition.z;
+                this.matchMeshPositionToPhysicalPosition();
+            }
         }
     }
 
     step(deltaTime: number) {
-        const decouplerForce = 100;
-        const force = 1000;
-        const rotationalForce = 1000;
+        const decouplerForce = 10000;
+        const force = 300000;
+        const rotationalForce = 500000;
 
         if (this.inputManager.IsKeyPressed(" ")) {
-            console.log("ici");
-            const forwardDirection = new THREE.Vector3(0, 1, 0);
+            const forwardDirection = new THREE.Vector3(0, 0, 0);
             forwardDirection.applyQuaternion(
                 this.meshes[this.flightPhase === 0 ? 0 : 3].quaternion
             );
             this.colliders[this.flightPhase === 0 ? 0 : 3].applyLocalForce(
                 new CANNON.Vec3(0, force, 0),
-                new CANNON.Vec3(0, 0, 0)
+                threeJsToCannonVec3(forwardDirection)
             );
+
+            this.thrustVector.position.copy(this.meshes[0].position.clone());
+            this.thrustVector.setDirection(forwardDirection);
+            this.thrustVector.setLength(10);
         }
         if (this.inputManager.IsKeyPressed("1") || this.inputManager.IsKeyPressed("&")) {
             if (this.flightPhase === 0) {
                 this.lockConstraints[2].disable();
                 this.flightPhase = 1;
+                // TODO: not local
                 this.colliders[3].applyLocalImpulse(
                     new CANNON.Vec3(0, decouplerForce, 0),
                     new CANNON.Vec3(0, 0, 0)
@@ -364,6 +346,7 @@ export default class SpaceCraft implements IEntity {
             if (this.flightPhase === 1) {
                 this.lockConstraints[5].disable();
                 this.flightPhase = 2;
+                // TODO: not local
                 this.colliders[6].applyLocalImpulse(
                     new CANNON.Vec3(0, decouplerForce, 0),
                     new CANNON.Vec3(0, 0, 0)
@@ -373,27 +356,81 @@ export default class SpaceCraft implements IEntity {
 
         const currentDecouplerIndex = this.flightPhase === 0 ? 2 : 5;
         if (this.inputManager.IsKeyPressed("a") || this.inputManager.IsKeyPressed("A")) {
-            var torque = new CANNON.Vec3(rotationalForce * deltaTime, 0, 0);
+            const forwardDirection = new THREE.Vector3(0, 1, 0);
+            forwardDirection.applyQuaternion(
+                this.meshes[this.flightPhase === 0 ? 0 : 3].quaternion
+            );
+            forwardDirection.multiplyScalar(rotationalForce * deltaTime);
+            const torque = new CANNON.Vec3(
+                forwardDirection.x,
+                forwardDirection.y,
+                forwardDirection.z
+            );
             this.colliders[currentDecouplerIndex].applyTorque(torque);
         }
         if (this.inputManager.IsKeyPressed("e") || this.inputManager.IsKeyPressed("E")) {
-            var torque = new CANNON.Vec3(-rotationalForce * deltaTime, 0, 0);
+            const forwardDirection = new THREE.Vector3(0, -1, 0);
+            forwardDirection.applyQuaternion(
+                this.meshes[this.flightPhase === 0 ? 0 : 3].quaternion
+            );
+            forwardDirection.multiplyScalar(rotationalForce * deltaTime);
+            const torque = new CANNON.Vec3(
+                forwardDirection.x,
+                forwardDirection.y,
+                forwardDirection.z
+            );
             this.colliders[currentDecouplerIndex].applyTorque(torque);
         }
         if (this.inputManager.IsKeyPressed("d") || this.inputManager.IsKeyPressed("D")) {
-            var torque = new CANNON.Vec3(0, rotationalForce * deltaTime, 0);
+            const forwardDirection = new THREE.Vector3(1, 0, 0);
+            forwardDirection.applyQuaternion(
+                this.meshes[this.flightPhase === 0 ? 0 : 3].quaternion
+            );
+            forwardDirection.multiplyScalar(rotationalForce * deltaTime);
+            const torque = new CANNON.Vec3(
+                forwardDirection.x,
+                forwardDirection.y,
+                forwardDirection.z
+            );
             this.colliders[currentDecouplerIndex].applyTorque(torque);
         }
         if (this.inputManager.IsKeyPressed("q") || this.inputManager.IsKeyPressed("Q")) {
-            var torque = new CANNON.Vec3(0, -rotationalForce * deltaTime, 0);
+            const forwardDirection = new THREE.Vector3(-1, 0, 0);
+            forwardDirection.applyQuaternion(
+                this.meshes[this.flightPhase === 0 ? 0 : 3].quaternion
+            );
+            forwardDirection.multiplyScalar(rotationalForce * deltaTime);
+            const torque = new CANNON.Vec3(
+                forwardDirection.x,
+                forwardDirection.y,
+                forwardDirection.z
+            );
             this.colliders[currentDecouplerIndex].applyTorque(torque);
         }
         if (this.inputManager.IsKeyPressed("z") || this.inputManager.IsKeyPressed("Z")) {
-            var torque = new CANNON.Vec3(0, 0, rotationalForce * deltaTime);
+            const forwardDirection = new THREE.Vector3(0, 0, 1);
+            forwardDirection.applyQuaternion(
+                this.meshes[this.flightPhase === 0 ? 0 : 3].quaternion
+            );
+            forwardDirection.multiplyScalar(rotationalForce * deltaTime);
+            const torque = new CANNON.Vec3(
+                forwardDirection.x,
+                forwardDirection.y,
+                forwardDirection.z
+            );
             this.colliders[currentDecouplerIndex].applyTorque(torque);
         }
         if (this.inputManager.IsKeyPressed("s") || this.inputManager.IsKeyPressed("S")) {
-            var torque = new CANNON.Vec3(0, 0, -rotationalForce * deltaTime);
+            const forwardDirection = new THREE.Vector3(0, 0, -1);
+            forwardDirection.applyQuaternion(
+                this.meshes[this.flightPhase === 0 ? 0 : 3].quaternion
+            );
+            forwardDirection.multiplyScalar(rotationalForce * deltaTime);
+            const torque = new CANNON.Vec3(
+                forwardDirection.x,
+                forwardDirection.y,
+                forwardDirection.z
+            );
             this.colliders[currentDecouplerIndex].applyTorque(torque);
         }
 
@@ -402,9 +439,16 @@ export default class SpaceCraft implements IEntity {
         //Update orbit
         const oe = new OrbitalElements(0, 0, 0, 0, 0, 0);
         oe.fromCartesian(
-            this.colliders[this.colliders.length - 1].position,
-            this.colliders[this.colliders.length - 1].velocity
+            this.colliders[this.colliders.length - 1].position.clone(),
+            this.colliders[this.colliders.length - 1].velocity.clone()
         );
         this.orbit.setOrbitalElements(oe);
+
+        // update altitude
+        this.altitude =
+            this.colliders[this.colliders.length - 1].position.distanceTo(
+                new CANNON.Vec3(0, 0, 0)
+            ) - 6371000;
+        useAltitude.setState({ altitude: this.altitude });
     }
 }

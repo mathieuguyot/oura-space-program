@@ -6,6 +6,16 @@ import InputManager from "./inputManager";
 import Planet from "./planet";
 import SpaceCraft from "./spacecraft";
 import CannonDebugger from "cannon-es-debugger";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import App from "./components/App";
+import React from "react";
+
+createRoot(document.getElementById("app")!).render(
+    <StrictMode>
+        <App />
+    </StrictMode>
+);
 
 const inputManager = new InputManager();
 
@@ -21,7 +31,7 @@ const camera = new PerspectiveCamera(
 const renderer = new WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
 renderer.shadowMap.enabled = true;
 renderer.setPixelRatio(window.devicePixelRatio);
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setSize(window.innerWidth - 10, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
 function onWindowResize() {
@@ -50,23 +60,12 @@ const sc = new SpaceCraft(
     scene,
     world,
     inputManager,
-    //new THREE.Vector3(earthRadius + 51, 0, 0),
-    //new THREE.Vector3(0, 0, 0)
-    new THREE.Vector3(2351526, 4171729, -4826254),
-    new THREE.Vector3(-7135, 1076, -2546)
+    new THREE.Vector3(earthRadius + 1, 0, 0),
+    new THREE.Vector3(0, 0, 0)
+    //new THREE.Vector3(2351526, 4171729, -4826254),
+    //new THREE.Vector3(-7135, 1076, -2546)
 );
 earth.addEntity(sc);
-
-// Add floor (debuging)
-/* const groundGeo = new THREE.PlaneGeometry(10000, 10000);
-const groundMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-groundMat.color.setHSL(0.095, 1, 0.75);
-
-const ground = new THREE.Mesh(groundGeo, groundMat);
-ground.position.y = -20.5;
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground); */
 
 // Set camera offset
 camera.position.x = sc.getMeshes()[sc.getMeshes().length - 1].position.x + 5;
@@ -115,7 +114,7 @@ function animate() {
     controls.update();
 
     // Render
-    //cannonDebugger.update();
+    cannonDebugger.update();
     renderer.render(scene, camera);
 }
 
